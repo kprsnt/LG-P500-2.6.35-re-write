@@ -210,7 +210,10 @@ int suspend_devices_and_enter(suspend_state_t state)
 			goto Close;
 	}
 	suspend_console();
+<<<<<<< HEAD
 	pm_restrict_gfp_mask();
+=======
+>>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
@@ -227,7 +230,10 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	dpm_resume_end(PMSG_RESUME);
 	suspend_test_finish("resume devices");
+<<<<<<< HEAD
 	pm_restore_gfp_mask();
+=======
+>>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 	resume_console();
  Close:
 	if (suspend_ops->end)
@@ -287,7 +293,9 @@ int enter_state(suspend_state_t state)
 		goto Finish;
 
 	pr_debug("PM: Entering %s sleep\n", pm_states[state]);
+	pm_restrict_gfp_mask();
 	error = suspend_devices_and_enter(state);
+	pm_restore_gfp_mask();
 
  Finish:
 	pr_debug("PM: Finishing wakeup.\n");
