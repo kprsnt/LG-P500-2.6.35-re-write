@@ -139,19 +139,19 @@ static int suspend_enter(suspend_state_t state)
 	if (suspend_ops->prepare) {
 		error = suspend_ops->prepare();
 		if (error)
-			goto Platform_finish;
+			return error;
 	}
 
 	error = dpm_suspend_noirq(PMSG_SUSPEND);
 	if (error) {
 		printk(KERN_ERR "PM: Some devices failed to power down\n");
-		goto Platform_finish;
+		goto Platfrom_finish;
 	}
 
 	if (suspend_ops->prepare_late) {
 		error = suspend_ops->prepare_late();
 		if (error)
-			goto Platform_wake;
+			goto Power_up_devices;
 	}
 
 	if (suspend_test(TEST_PLATFORM))
@@ -183,9 +183,10 @@ static int suspend_enter(suspend_state_t state)
 	if (suspend_ops->wake)
 		suspend_ops->wake();
 
+ Power_up_devices:
 	dpm_resume_noirq(PMSG_RESUME);
 
- Platform_finish:
+ Platfrom_finish:
 	if (suspend_ops->finish)
 		suspend_ops->finish();
 
@@ -210,10 +211,6 @@ int suspend_devices_and_enter(suspend_state_t state)
 			goto Close;
 	}
 	suspend_console();
-<<<<<<< HEAD
-	pm_restrict_gfp_mask();
-=======
->>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
@@ -230,10 +227,6 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	dpm_resume_end(PMSG_RESUME);
 	suspend_test_finish("resume devices");
-<<<<<<< HEAD
-	pm_restore_gfp_mask();
-=======
->>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 	resume_console();
  Close:
 	if (suspend_ops->end)

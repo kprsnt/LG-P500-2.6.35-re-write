@@ -58,13 +58,10 @@ static DEFINE_TIMER(dpm_drv_wd, dpm_drv_timeout, 0, 0);
  */
 static bool transition_started;
 
-<<<<<<< HEAD
-=======
 static void
 pm_dev_trace(int type, struct device *dev, pm_message_t state, char *info);
 static int async_error;
 
->>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 /**
  * device_pm_init - Initialize the PM-related part of a device object.
  * @dev: Device object being initialized.
@@ -73,10 +70,7 @@ void device_pm_init(struct device *dev)
 {
 	dev->power.status = DPM_ON;
 	init_completion(&dev->power.completion);
-<<<<<<< HEAD
-=======
 	complete_all(&dev->power.completion);
->>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 	dev->power.wakeup_count = 0;
 	pm_runtime_init(dev);
 }
@@ -247,12 +241,14 @@ static int pm_op(struct device *dev,
 #ifdef CONFIG_SUSPEND
 	case PM_EVENT_SUSPEND:
 		if (ops->suspend) {
+			pm_dev_trace(TRACE_DPM_SUSPEND, dev, state, "");
 			error = ops->suspend(dev);
 			suspend_report_result(ops->suspend, error);
 		}
 		break;
 	case PM_EVENT_RESUME:
 		if (ops->resume) {
+			pm_dev_trace(TRACE_DPM_RESUME, dev, state, "");
 			error = ops->resume(dev);
 			suspend_report_result(ops->resume, error);
 		}
@@ -322,12 +318,16 @@ static int pm_noirq_op(struct device *dev,
 #ifdef CONFIG_SUSPEND
 	case PM_EVENT_SUSPEND:
 		if (ops->suspend_noirq) {
+			pm_dev_trace(TRACE_DPM_SUSPEND_NOIRQ,
+				dev, state, "LATE ");
 			error = ops->suspend_noirq(dev);
 			suspend_report_result(ops->suspend_noirq, error);
 		}
 		break;
 	case PM_EVENT_RESUME:
 		if (ops->resume_noirq) {
+			pm_dev_trace(TRACE_DPM_RESUME_NOIRQ,
+				dev, state, "EARLY ");
 			error = ops->resume_noirq(dev);
 			suspend_report_result(ops->resume_noirq, error);
 		}
@@ -398,6 +398,15 @@ static char *pm_verb(int event)
 	default:
 		return "(unknown PM event)";
 	}
+}
+
+static void
+pm_dev_trace(int type, struct device *dev, pm_message_t state, char *info)
+{
+	TRACE_MASK(type, "%s %s: dpm %s%s%s\n", dev_driver_string(dev),
+		dev_name(dev), info, pm_verb(state.event),
+		((state.event & PM_EVENT_SLEEP) && device_may_wakeup(dev)) ?
+		", may wakeup" : "");
 }
 
 static void pm_dev_dbg(struct device *dev, pm_message_t state, char *info)
@@ -552,6 +561,7 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 			error = pm_op(dev, dev->bus->pm, state);
 		} else if (dev->bus->resume) {
 			pm_dev_dbg(dev, state, "legacy ");
+			pm_dev_trace(TRACE_DPM_RESUME, dev, state, "legacy ");
 			error = legacy_resume(dev, dev->bus->resume);
 		}
 		if (error)
@@ -573,6 +583,8 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 			error = pm_op(dev, dev->class->pm, state);
 		} else if (dev->class->resume) {
 			pm_dev_dbg(dev, state, "legacy class ");
+			pm_dev_trace(TRACE_DPM_RESUME,
+				dev, state, "legacy class ");
 			error = legacy_resume(dev, dev->class->resume);
 		}
 	}
@@ -627,7 +639,11 @@ static void dpm_drv_timeout(unsigned long data)
 static void dpm_drv_wdset(struct device *dev)
 {
 	dpm_drv_wd.data = (unsigned long) dev;
-	mod_timer(&dpm_drv_wd, jiffies + (HZ * 200));
+#if defined(CONFIG_ARCH_MSM8X60)
+	mod_timer(&dpm_drv_wd, jiffies + (HZ * 10));
+#else
+	mod_timer(&dpm_drv_wd, jiffies + (HZ * 3));
+#endif
 }
 
 /**
@@ -698,16 +714,21 @@ static void device_complete(struct device *dev, pm_message_t state)
 
 	if (dev->class && dev->class->pm && dev->class->pm->complete) {
 		pm_dev_dbg(dev, state, "completing class ");
+		pm_dev_trace(TRACE_DPM_COMPLETE,
+			dev, state, "completing class ");
 		dev->class->pm->complete(dev);
 	}
 
 	if (dev->type && dev->type->pm && dev->type->pm->complete) {
 		pm_dev_dbg(dev, state, "completing type ");
+		pm_dev_trace(TRACE_DPM_COMPLETE,
+			dev, state, "completing type ");
 		dev->type->pm->complete(dev);
 	}
 
 	if (dev->bus && dev->bus->pm && dev->bus->pm->complete) {
 		pm_dev_dbg(dev, state, "completing ");
+		pm_dev_trace(TRACE_DPM_COMPLETE, dev, state, "completing ");
 		dev->bus->pm->complete(dev);
 	}
 
@@ -903,6 +924,8 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 			error = pm_op(dev, dev->class->pm, state);
 		} else if (dev->class->suspend) {
 			pm_dev_dbg(dev, state, "legacy class ");
+			pm_dev_trace(TRACE_DPM_SUSPEND,
+				dev, state, "legacy class ");
 			error = legacy_suspend(dev, state, dev->class->suspend);
 		}
 		if (error)
@@ -924,6 +947,7 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 			error = pm_op(dev, dev->bus->pm, state);
 		} else if (dev->bus->suspend) {
 			pm_dev_dbg(dev, state, "legacy ");
+			pm_dev_trace(TRACE_DPM_SUSPEND, dev, state, "legacy ");
 			error = legacy_suspend(dev, state, dev->bus->suspend);
 		}
 	}
@@ -1025,6 +1049,7 @@ static int device_prepare(struct device *dev, pm_message_t state)
 
 	if (dev->bus && dev->bus->pm && dev->bus->pm->prepare) {
 		pm_dev_dbg(dev, state, "preparing ");
+		pm_dev_trace(TRACE_DPM_PREPARE, dev, state, "preparing ");
 		error = dev->bus->pm->prepare(dev);
 		suspend_report_result(dev->bus->pm->prepare, error);
 		if (error)
@@ -1033,6 +1058,7 @@ static int device_prepare(struct device *dev, pm_message_t state)
 
 	if (dev->type && dev->type->pm && dev->type->pm->prepare) {
 		pm_dev_dbg(dev, state, "preparing type ");
+		pm_dev_trace(TRACE_DPM_PREPARE, dev, state, "preparing type ");
 		error = dev->type->pm->prepare(dev);
 		suspend_report_result(dev->type->pm->prepare, error);
 		if (error)
@@ -1041,6 +1067,7 @@ static int device_prepare(struct device *dev, pm_message_t state)
 
 	if (dev->class && dev->class->pm && dev->class->pm->prepare) {
 		pm_dev_dbg(dev, state, "preparing class ");
+		pm_dev_trace(TRACE_DPM_PREPARE, dev, state, "preparing class ");
 		error = dev->class->pm->prepare(dev);
 		suspend_report_result(dev->class->pm->prepare, error);
 	}
