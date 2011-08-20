@@ -243,37 +243,6 @@ power_attr(state);
  * is allowed to write to 'state', but the transition will be aborted if there
  * are any wakeup events detected after 'wakeup_count' was written to.
  */
-<<<<<<< HEAD
-=======
-
-static ssize_t wakeup_count_show(struct kobject *kobj,
-				struct kobj_attribute *attr,
-				char *buf)
-{
-	unsigned long val;
-
-	return pm_get_wakeup_count(&val) ? sprintf(buf, "%lu\n", val) : -EINTR;
-}
-
-static ssize_t wakeup_count_store(struct kobject *kobj,
-				struct kobj_attribute *attr,
-				const char *buf, size_t n)
-{
-	unsigned long val;
-
-	if (sscanf(buf, "%lu", &val) == 1) {
-		if (pm_save_wakeup_count(val))
-			return n;
-	}
-	return -EINVAL;
-}
-
-power_attr(wakeup_count);
-#endif /* CONFIG_PM_SLEEP */
-
-#ifdef CONFIG_PM_TRACE
-int pm_trace_enabled;
->>>>>>> 8f36edb... add: alot of patches and tweaks from CodeAurora regarding pm
 
 static ssize_t wakeup_count_show(struct kobject *kobj,
 				struct kobj_attribute *attr,
