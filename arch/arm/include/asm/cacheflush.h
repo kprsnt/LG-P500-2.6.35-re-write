@@ -19,6 +19,8 @@
 
 #define CACHE_COLOUR(vaddr)	((vaddr & (SHMLBA - 1)) >> PAGE_SHIFT)
 
+#define PG_dcache_clean PG_arch_1
+
 /*
  *	Cache Model
  *	===========
