@@ -193,12 +193,8 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long addr,
 		return;
 
 	mapping = page_mapping(page);
-<<<<<<< HEAD
-#ifndef CONFIG_SMP
-	if (test_and_clear_bit(PG_dcache_dirty, &page->flags))
-=======
+
 	if (!test_and_set_bit(PG_dcache_clean, &page->flags))
->>>>>>> 7f7f43e... ARM: 6380/1: Introduce __sync_icache_dcache() for VIPT caches
 		__flush_dcache_page(mapping, page);
 	if (mapping) {
 		if (cache_is_vivt())
