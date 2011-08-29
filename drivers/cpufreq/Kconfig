@@ -111,15 +111,6 @@ config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	  governor. If unsure have a look at the help section of the
 	  driver. Fallback governor will be the performance governor.
 
-config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
-	bool "interactive"
-	select CPU_FREQ_GOV_INTERACTIVE
-	help
-	  Use the CPUFreq governor 'interactive' as default. This allows
-	  you to get a full dynamic cpu frequency capable system by simply
-	  loading your cpufreq low-level hardware driver, using the
-	  'interactive' governor for latency-sensitive workloads.
-
 config CPU_FREQ_DEFAULT_GOV_SMARTASS
 	bool "smartass"
 	select CPU_FREQ_GOV_SMARTASS
@@ -132,7 +123,7 @@ endchoice
 config CPU_FREQ_GOV_INTERACTIVEX
 	tristate "'interactiveX' cpufreq policy governor"
 	help
-	  'interactiveX' - Modified version of interactive with sleep+wake code.
+	  'InteractiveX' - Modified version of interactive with sleep+wake code.
 
 config CPU_FREQ_GOV_SAVAGEDZEN
 	tristate "'savagedzen' cpufreq governor"
@@ -145,15 +136,15 @@ config CPU_FREQ_GOV_SMARTASS
 	tristate "'smartass' cpufreq governor"
 	depends on CPU_FREQ
 	help
-	  'smartass' - a "smart" optimized governor for the hero!
+	  Smartass' - a "smart" optimized governor for the hero!
 
 	  If in doubt, say N.
 
-config CPU_FREQ_GOV_SMOOTHASS
-  	tristate "'smoothass' cpufreq governor"
+config CPU_FREQ_GOV_SMARTASS2
+  	tristate "'smartass2' cpufreq governor"
   	depends on CPU_FREQ
   	help
-  	  smoothass' - a "slightly more agressive smartass" governor!
+  	  Smartass2' - a "slightly more agressive smartass" governor!
    
   	  If in doubt, say N.
   	  
@@ -266,17 +257,11 @@ config CPU_FREQ_GOV_CONSERVATIVE
 
 	  If in doubt, say N.
 
-config CPU_FREQ_GOV_INTERACTIVE
-	tristate "'interactive' cpufreq governor"
-	depends on CPU_FREQ
-	help
-	  Interactive
-
 config CPU_FREQ_GOV_SMARTASS
 	tristate "'smartass' cpufreq governor"
 	depends on CPU_FREQ
 	help
-	  'smartass' - a "smart" optimized governor for the hero!
+	  'Smartass' - a "smart" optimized governor for the hero!
 
 	  If in doubt, say N.
 
