@@ -41,12 +41,6 @@ extern void (*pm_power_off_prepare)(void);
 
 struct device;
 
-#ifdef CONFIG_PM
-extern const char power_group_name[];		/* = "power" */
-#else
-#define power_group_name	NULL
-#endif
-
 typedef struct pm_message {
 	int event;
 } pm_message_t;
@@ -444,9 +438,6 @@ enum rpm_status {
  *
  * RPM_REQ_SUSPEND	Run the device bus type's ->runtime_suspend() callback
  *
- * RPM_REQ_AUTOSUSPEND	Same as RPM_REQ_SUSPEND, but not until the device has
- *			been inactive for as long as power.autosuspend_delay
- *
  * RPM_REQ_RESUME	Run the device bus type's ->runtime_resume() callback
  */
 
@@ -454,28 +445,26 @@ enum rpm_request {
 	RPM_REQ_NONE = 0,
 	RPM_REQ_IDLE,
 	RPM_REQ_SUSPEND,
-	RPM_REQ_AUTOSUSPEND,
 	RPM_REQ_RESUME,
 };
-
-struct wakeup_source;
 
 struct dev_pm_info {
 	pm_message_t		power_state;
 	unsigned int		can_wakeup:1;
+	unsigned int		should_wakeup:1;
 	unsigned		async_suspend:1;
 	enum dpm_state		status;		/* Owned by the PM core */
-	spinlock_t		lock;
 #ifdef CONFIG_PM_SLEEP
 	struct list_head	entry;
 	struct completion	completion;
-	struct wakeup_source	*wakeup;
+	unsigned long		wakeup_count;
 #endif
 #ifdef CONFIG_PM_RUNTIME
 	struct timer_list	suspend_timer;
 	unsigned long		timer_expires;
 	struct work_struct	work;
 	wait_queue_head_t	wait_queue;
+	spinlock_t		lock;
 	atomic_t		usage_count;
 	atomic_t		child_count;
 	unsigned int		disable_depth:3;
@@ -485,22 +474,11 @@ struct dev_pm_info {
 	unsigned int		deferred_resume:1;
 	unsigned int		run_wake:1;
 	unsigned int		runtime_auto:1;
-	unsigned int		no_callbacks:1;
-	unsigned int		use_autosuspend:1;
-	unsigned int		timer_autosuspends:1;
 	enum rpm_request	request;
 	enum rpm_status		runtime_status;
 	int			runtime_error;
-	int			autosuspend_delay;
-	unsigned long		last_busy;
-	unsigned long		active_jiffies;
-	unsigned long		suspended_jiffies;
-	unsigned long		accounting_timestamp;
 #endif
 };
-
-extern void update_pm_runtime_accounting(struct device *dev);
-
 
 /*
  * The PM_EVENT_ messages are also used by drivers implementing the legacy
@@ -574,7 +552,12 @@ extern void __suspend_report_result(const char *function, void *fn, int ret);
 		__suspend_report_result(__func__, fn, ret);		\
 	} while (0)
 
-extern int device_pm_wait_for_dev(struct device *sub, struct device *dev);
+extern void device_pm_wait_for_dev(struct device *sub, struct device *dev);
+
+/* drivers/base/power/wakeup.c */
+extern void pm_wakeup_event(struct device *dev, unsigned int msec);
+extern void pm_stay_awake(struct device *dev);
+extern void pm_relax(void);
 #else /* !CONFIG_PM_SLEEP */
 
 #define device_pm_lock() do {} while (0)
@@ -587,10 +570,11 @@ static inline int dpm_suspend_start(pm_message_t state)
 
 #define suspend_report_result(fn, ret)		do {} while (0)
 
-static inline int device_pm_wait_for_dev(struct device *a, struct device *b)
-{
-	return 0;
-}
+static inline void device_pm_wait_for_dev(struct device *a, struct device *b) {}
+
+static inline void pm_wakeup_event(struct device *dev, unsigned int msec) {}
+static inline void pm_stay_awake(struct device *dev) {}
+static inline void pm_relax(void) {}
 #endif /* !CONFIG_PM_SLEEP */
 
 /* How to reorder dpm_list after device_move() */
@@ -609,5 +593,12 @@ extern unsigned int	pm_flags;
 
 #define PM_APM	1
 #define PM_ACPI	2
+
+extern int pm_generic_suspend(struct device *dev);
+extern int pm_generic_resume(struct device *dev);
+extern int pm_generic_freeze(struct device *dev);
+extern int pm_generic_thaw(struct device *dev);
+extern int pm_generic_restore(struct device *dev);
+extern int pm_generic_poweroff(struct device *dev);
 
 #endif /* _LINUX_PM_H */
