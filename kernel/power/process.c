@@ -15,6 +15,7 @@
 #include <linux/syscalls.h>
 #include <linux/freezer.h>
 #include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <linux/wakelock.h>
 
 /* 
@@ -36,14 +37,19 @@ static int try_to_freeze_tasks(bool sig_only)
 	struct task_struct *g, *p;
 	unsigned long end_time;
 	unsigned int todo;
+	bool wq_busy = false;
 	struct timeval start, end;
 	u64 elapsed_csecs64;
 	unsigned int elapsed_csecs;
-	bool wakeup = false;
+	unsigned int wakeup = 0;
 
 	do_gettimeofday(&start);
 
 	end_time = jiffies + TIMEOUT;
+
+	if (!sig_only)
+		freeze_workqueues_begin();
+
 	while (true) {
 		todo = 0;
 		read_lock(&tasklist_lock);
@@ -59,29 +65,24 @@ static int try_to_freeze_tasks(bool sig_only)
 			 * perturb a task in TASK_STOPPED or TASK_TRACED.
 			 * It is "frozen enough".  If the task does wake
 			 * up, it will immediately call try_to_freeze.
-			 *
-			 * Because freeze_task() goes through p's
-			 * scheduler lock after setting TIF_FREEZE, it's
-			 * guaranteed that either we see TASK_RUNNING or
-			 * try_to_stop() after schedule() in ptrace/signal
-			 * stop sees TIF_FREEZE.
 			 */
 			if (!task_is_stopped_or_traced(p) &&
 			    !freezer_should_skip(p))
 				todo++;
 		} while_each_thread(g, p);
 		read_unlock(&tasklist_lock);
+
+		if (!sig_only) {
+			wq_busy = freeze_workqueues_busy();
+			todo += wq_busy;
+		}
+
 		if (todo && has_wake_lock(WAKE_LOCK_SUSPEND)) {
 			wakeup = 1;
 			break;
 		}
 		if (!todo || time_after(jiffies, end_time))
 			break;
-
-		if (!pm_check_wakeup_events()) {
-			wakeup = true;
-			break;
-		}
 
 		/*
 		 * We need to retry, but first give the freezing tasks some
@@ -108,15 +109,18 @@ static int try_to_freeze_tasks(bool sig_only)
 		}
 		else {
 			printk("\n");
-			printk(KERN_ERR "Freezing of tasks %s after %d.%02d seconds "
-					"(%d tasks refusing to freeze):\n",
-					wakeup ? "aborted" : "failed",
-					elapsed_csecs / 100, elapsed_csecs % 100, todo);
+			printk(KERN_ERR "Freezing of tasks failed after %d.%02d seconds "
+			       "(%d tasks refusing to freeze, wq_busy=%d):\n",
+			       elapsed_csecs / 100, elapsed_csecs % 100,
+			       todo - wq_busy, wq_busy);
 		}
+		thaw_workqueues();
+
 		read_lock(&tasklist_lock);
 		do_each_thread(g, p) {
 			task_lock(p);
-			if (!wakeup && freezing(p) && !freezer_should_skip(p))
+			if (freezing(p) && !freezer_should_skip(p) &&
+				elapsed_csecs > 100)
 				sched_show_task(p);
 			cancel_freezing(p);
 			task_unlock(p);
@@ -182,6 +186,7 @@ void thaw_processes(void)
 	oom_killer_enable();
 
 	printk("Restarting tasks ... ");
+	thaw_workqueues();
 	thaw_tasks(true);
 	thaw_tasks(false);
 	schedule();
