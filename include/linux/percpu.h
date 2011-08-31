@@ -45,6 +45,16 @@
 #define PCPU_MIN_UNIT_SIZE		PFN_ALIGN(64 << 10)
 
 /*
+ * Percpu allocator can serve percpu allocations before slab is
+ * initialized which allows slab to depend on the percpu allocator.
+ * The following two parameters decide how much resource to
+ * preallocate for this.  Keep PERCPU_DYNAMIC_RESERVE equal to or
+ * larger than PERCPU_DYNAMIC_EARLY_SIZE.
+ */
+#define PERCPU_DYNAMIC_EARLY_SLOTS	128
+#define PERCPU_DYNAMIC_EARLY_SIZE	(12 << 10)
+
+/*
  * PERCPU_DYNAMIC_RESERVE indicates the amount of free area to piggy
  * back on the first chunk for dynamic percpu allocation if arch is
  * manually allocating and mapping it for faster access (as a part of
@@ -104,16 +114,11 @@ extern struct pcpu_alloc_info * __init pcpu_alloc_alloc_info(int nr_groups,
 							     int nr_units);
 extern void __init pcpu_free_alloc_info(struct pcpu_alloc_info *ai);
 
-extern struct pcpu_alloc_info * __init pcpu_build_alloc_info(
-				size_t reserved_size, ssize_t dyn_size,
-				size_t atom_size,
-				pcpu_fc_cpu_distance_fn_t cpu_distance_fn);
-
 extern int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 					 void *base_addr);
 
 #ifdef CONFIG_NEED_PER_CPU_EMBED_FIRST_CHUNK
-extern int __init pcpu_embed_first_chunk(size_t reserved_size, ssize_t dyn_size,
+extern int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 				size_t atom_size,
 				pcpu_fc_cpu_distance_fn_t cpu_distance_fn,
 				pcpu_fc_alloc_fn_t alloc_fn,
@@ -140,10 +145,11 @@ extern bool is_kernel_percpu_address(unsigned long addr);
 #ifndef CONFIG_HAVE_SETUP_PER_CPU_AREA
 extern void __init setup_per_cpu_areas(void);
 #endif
+extern void __init percpu_init_late(void);
 
 #else /* CONFIG_SMP */
 
-#define per_cpu_ptr(ptr, cpu) ({ (void)(cpu); (ptr); })
+#define per_cpu_ptr(ptr, cpu) ({ (void)(cpu); VERIFY_PERCPU_PTR((ptr)); })
 
 /* can't distinguish from other static vars, always false */
 static inline bool is_kernel_percpu_address(unsigned long addr)
@@ -152,6 +158,8 @@ static inline bool is_kernel_percpu_address(unsigned long addr)
 }
 
 static inline void __init setup_per_cpu_areas(void) { }
+
+static inline void __init percpu_init_late(void) { }
 
 static inline void *pcpu_lpage_remapped(void *kaddr)
 {
@@ -240,21 +248,6 @@ extern void __bad_size_call_parameter(void);
 		__bad_size_call_parameter();break;			\
 	}								\
 	pscr_ret__;							\
-})
-
-#define __pcpu_size_call_return2(stem, variable, ...)			\
-({									\
-	typeof(variable) pscr2_ret__;					\
-	__verify_pcpu_ptr(&(variable));					\
-	switch(sizeof(variable)) {					\
-	case 1: pscr2_ret__ = stem##1(variable, __VA_ARGS__); break;	\
-	case 2: pscr2_ret__ = stem##2(variable, __VA_ARGS__); break;	\
-	case 4: pscr2_ret__ = stem##4(variable, __VA_ARGS__); break;	\
-	case 8: pscr2_ret__ = stem##8(variable, __VA_ARGS__); break;	\
-	default:							\
-		__bad_size_call_parameter(); break;			\
-	}								\
-	pscr2_ret__;							\
 })
 
 #define __pcpu_size_call(stem, variable, ...)				\
@@ -529,62 +522,6 @@ do {									\
 # endif
 # define __this_cpu_or(pcp, val)	__pcpu_size_call(__this_cpu_or_, (pcp), (val))
 #endif
-
-#define _this_cpu_generic_add_return(pcp, val)				\
-({									\
-	typeof(pcp) ret__;						\
-	preempt_disable();						\
-	__this_cpu_add(pcp, val);					\
-	ret__ = __this_cpu_read(pcp);					\
-	preempt_enable();						\
-	ret__;								\
-})
-
-#ifndef this_cpu_add_return
-# ifndef this_cpu_add_return_1
-#  define this_cpu_add_return_1(pcp, val)	_this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef this_cpu_add_return_2
-#  define this_cpu_add_return_2(pcp, val)	_this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef this_cpu_add_return_4
-#  define this_cpu_add_return_4(pcp, val)	_this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef this_cpu_add_return_8
-#  define this_cpu_add_return_8(pcp, val)	_this_cpu_generic_add_return(pcp, val)
-# endif
-# define this_cpu_add_return(pcp, val)	__pcpu_size_call_return2(this_cpu_add_return_, pcp, val)
-#endif
-
-#define this_cpu_sub_return(pcp, val)	this_cpu_add_return(pcp, -(val))
-#define this_cpu_inc_return(pcp)	this_cpu_add_return(pcp, 1)
-#define this_cpu_dec_return(pcp)	this_cpu_add_return(pcp, -1)
-
-#define __this_cpu_generic_add_return(pcp, val)				\
-({									\
-	__this_cpu_add(pcp, val);					\
-	__this_cpu_read(pcp);						\
-})
-
-#ifndef __this_cpu_add_return
-# ifndef __this_cpu_add_return_1
-#  define __this_cpu_add_return_1(pcp, val)	__this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef __this_cpu_add_return_2
-#  define __this_cpu_add_return_2(pcp, val)	__this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef __this_cpu_add_return_4
-#  define __this_cpu_add_return_4(pcp, val)	__this_cpu_generic_add_return(pcp, val)
-# endif
-# ifndef __this_cpu_add_return_8
-#  define __this_cpu_add_return_8(pcp, val)	__this_cpu_generic_add_return(pcp, val)
-# endif
-# define __this_cpu_add_return(pcp, val)	__pcpu_size_call_return2(this_cpu_add_return_, pcp, val)
-#endif
-
-#define __this_cpu_sub_return(pcp, val)	this_cpu_add_return(pcp, -(val))
-#define __this_cpu_inc_return(pcp)	this_cpu_add_return(pcp, 1)
-#define __this_cpu_dec_return(pcp)	this_cpu_add_return(pcp, -1)
 
 #ifndef __this_cpu_xor
 # ifndef __this_cpu_xor_1
