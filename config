@@ -1,7 +1,11 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.35.14
+<<<<<<< HEAD:config
 # Mon Aug 29 04:58:18 2011
+=======
+# Sun Aug 21 01:14:43 2011
+>>>>>>> parent of 6fc9bcc... Compile fix and config:.config
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -428,8 +432,7 @@ CONFIG_ARCH_HAS_BARRIERS=y
 # CONFIG_VCM is not set
 # CONFIG_RESERVE_FIRST_PAGE is not set
 CONFIG_CPU_HAS_PMU=y
-CONFIG_ARM_ERRATA_411920=y
-CONFIG_ARM_ERRATA_364296=y
+# CONFIG_ARM_ERRATA_411920 is not set
 CONFIG_COMMON_CLKDEV=y
 # CONFIG_FIQ_DEBUGGER is not set
 
