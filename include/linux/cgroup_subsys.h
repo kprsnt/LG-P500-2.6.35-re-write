@@ -61,13 +61,15 @@ SUBSYS(blkio)
 
 /* */
 
-<<<<<<< HEAD
+
 #ifdef CONFIG_CGROUP_TIMER_SLACK
 SUBSYS(timer_slack)
-=======
+#endif
+
+/* */
+
 #ifdef CONFIG_CGROUP_BFQIO
 SUBSYS(bfqio)
->>>>>>> 5567f0a... Add: BFQ I/O Scheduler
 #endif
 
 /* */
