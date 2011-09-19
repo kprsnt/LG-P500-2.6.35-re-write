@@ -208,13 +208,8 @@ void __cpuinit calibrate_delay(void)
 	}
 	if (!printed)
 		pr_cont("%lu.%02lu BogoMIPS (lpj=%lu)\n",
-<<<<<<< HEAD
-			loops_per_jiffy/(500000/HZ),
-			(loops_per_jiffy/(5000/HZ)) % 100, loops_per_jiffy);
-=======
 			lpj/(500000/HZ),
 			(lpj/(5000/HZ)) % 100, lpj);
->>>>>>> 54d6176... portd calibrate from 2.6.39 - by zachariasmaladroit
 
 	loops_per_jiffy = lpj;
 	printed = true;
