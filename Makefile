@@ -190,7 +190,7 @@ SUBARCH := arm
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 export KBUILD_BUILDHOST := $(SUBARCH)
 ARCH		?= arm
-CROSS_COMPILE	?= /home/francisco/Desktop/arm-2011.03/bin/arm-none-eabi-
+CROSS_COMPILE	?= /home/francisco/Desktop/android-toolchain-eabi/bin/arm-eabi-
 CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
 
 # Architecture as present in compile.h
