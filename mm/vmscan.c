@@ -36,7 +36,6 @@
 #include <linux/rwsem.h>
 #include <linux/delay.h>
 #include <linux/kthread.h>
-#include <linux/timer.h>
 #include <linux/freezer.h>
 #include <linux/memcontrol.h>
 #include <linux/delayacct.h>
@@ -125,7 +124,7 @@ struct scan_control {
 /*
  * From 0 .. 100.  Higher means more swappy.
  */
-int vm_swappiness;
+int vm_swappiness = 0;
 long vm_total_pages;	/* The total number of pages which the VM controls */
 
 static LIST_HEAD(shrinker_list);
@@ -1542,7 +1541,6 @@ static void get_scan_count(struct zone *zone, struct scan_control *sc,
 	u64 fraction[2], denominator;
 	enum lru_list l;
 	int noswap = 0;
-	int tmp_priority;
 
 	/* If we have no swap space, do not bother scanning anon pages. */
 	if (!sc->may_swap || (nr_swap_pages <= 0)) {
@@ -1623,11 +1621,7 @@ out:
 
 		scan = zone_nr_lru_pages(zone, sc, l);
 		if (priority || noswap) {
-			tmp_priority = priority;
-
-      			if (file && priority > 0)
-        		  tmp_priority = DEF_PRIORITY;
-      			scan >>= tmp_priority;
+			scan >>= priority;
 			scan = div64_u64(scan * fraction[file], denominator);
 		}
 		nr[l] = nr_scan_try_batch(scan,
@@ -1700,35 +1694,6 @@ static void shrink_zone(int priority, struct zone *zone,
 		shrink_active_list(SWAP_CLUSTER_MAX, zone, sc, priority, 0);
 
 	throttle_vm_writeout(sc->gfp_mask);
-}
-
-/*
- * Helper functions to adjust nice level of kswapd, based on the priority of
- * the task (p) that called it. If it is already higher priority we do not
- * demote its nice level since it is still working on behalf of a higher
- * priority task. With kernel threads we leave it at nice 0.
- *
- * We don't ever run kswapd real time, so if a real time task calls kswapd we
- * set it to highest SCHED_NORMAL priority.
- */
-static inline int effective_sc_prio(struct task_struct *p)
-{
-  if (likely(p->mm)) {
-    if (rt_task(p))
-      return -20;
-    if (p->policy == SCHED_IDLEPRIO)
-      return 19;
-    return task_nice(p);
-  }
-  return 0;
-}
-
-static void set_kswapd_nice(struct task_struct *kswapd, int active)
-{
-  long nice = effective_sc_prio(current);
-
-  if (task_nice(kswapd) > nice || !active)
-    set_user_nice(kswapd, nice);
 }
 
 /*
@@ -2272,8 +2237,6 @@ out:
 	return sc.nr_reclaimed;
 }
 
-#define WT_EXPIRY  (HZ * 5)  /* Time to wakeup watermark_timer */
-
 /*
  * The background pageout daemon, started as a kernel thread
  * from the init process.
@@ -2323,10 +2286,7 @@ static int kswapd(void *p)
 	for ( ; ; ) {
 		unsigned long new_order;
 		int ret;
-		
-		/* kswapd has been busy so delay watermark_timer */
 
-		mod_timer(&pgdat->watermark_timer, jiffies + WT_EXPIRY);
 		prepare_to_wait(&pgdat->kswapd_wait, &wait, TASK_INTERRUPTIBLE);
 		new_order = pgdat->kswapd_max_order;
 		pgdat->kswapd_max_order = 0;
@@ -2364,7 +2324,6 @@ static int kswapd(void *p)
 				}
 			}
 
-			set_user_nice(tsk, 0);
 			order = pgdat->kswapd_max_order;
 		}
 		finish_wait(&pgdat->kswapd_wait, &wait);
@@ -2389,7 +2348,6 @@ static int kswapd(void *p)
 void wakeup_kswapd(struct zone *zone, int order)
 {
 	pg_data_t *pgdat;
-	int active;
 
 	if (!populated_zone(zone))
 		return;
@@ -2399,9 +2357,7 @@ void wakeup_kswapd(struct zone *zone, int order)
 	pgdat = zone->zone_pgdat;
 	if (pgdat->kswapd_max_order < order)
 		pgdat->kswapd_max_order = order;
-	active = waitqueue_active(&pgdat->kswapd_wait);
-  	set_kswapd_nice(pgdat->kswapd, active);
-  	if (!active)
+	if (!waitqueue_active(&pgdat->kswapd_wait))
 		return;
 	if (zone_watermark_ok_safe(zone, order, low_wmark_pages(zone), 0, 0))
 		return;
@@ -2510,6 +2466,7 @@ static int __devinit cpu_callback(struct notifier_block *nfb,
 }
 
 /*
+<<<<<<< HEAD
  * We wake up kswapd every WT_EXPIRY till free ram is above pages_lots
  */
 static void watermark_wakeup(unsigned long data)
@@ -2538,29 +2495,22 @@ out:
 }
 
 /*
+=======
+>>>>>>> parent of 642374a... Ck2 patch
  * This kswapd start function will be called by init and node-hot-add.
  * On node-hot-add, kswapd will moved to proper cpus if cpus are hot-added.
  */
 int kswapd_run(int nid)
 {
 	pg_data_t *pgdat = NODE_DATA(nid);
-	struct timer_list *wt;
 	int ret = 0;
 
 	if (pgdat->kswapd)
 		return 0;
 
-	wt = &pgdat->watermark_timer;
-  	init_timer(wt);
-  	wt->data = (unsigned long)pgdat;
-  	wt->function = watermark_wakeup;
-  	wt->expires = jiffies + WT_EXPIRY;
-  	add_timer(wt);
-
 	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
 	if (IS_ERR(pgdat->kswapd)) {
 		/* failure at boot is fatal */
-		del_timer(wt);
 		BUG_ON(system_state == SYSTEM_BOOTING);
 		printk("Failed to start kswapd on node %d\n",nid);
 		ret = -1;

@@ -52,7 +52,7 @@ static size_t lowmem_minfree[6] = {
 	4 * 1024,	/* 16MB */
 	16 * 1024,	/* 64MB */
 };
-static int lowmem_minfree_size = 4;
+static int lowmem_minfree_size = 6;
 
 static struct task_struct *lowmem_deathpending;
 static unsigned long lowmem_deathpending_timeout;
@@ -228,7 +228,7 @@ module_param_named(cost, lowmem_shrinker.seeks, int, S_IRUGO | S_IWUSR);
 module_param_array_named(adj, lowmem_adj, int, &lowmem_adj_size,
 			 S_IRUGO | S_IWUSR);
 module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
-			 S_IRUGO | S_IWUSR);
+			00444);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
 
 module_init(lowmem_init);
