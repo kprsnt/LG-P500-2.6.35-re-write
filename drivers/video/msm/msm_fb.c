@@ -110,6 +110,7 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg);
 static int msm_fb_mmap(struct fb_info *info, struct vm_area_struct * vma);
 
+/*
 #if CONFIG_LGE_GRAM_REFRESH_PATCH
 static struct fb_var_screeninfo *last_var;
 static struct fb_info *last_info;
@@ -117,11 +118,7 @@ static struct early_suspend additional_early_suspend;
 static void msmfb_early_suspend_early(struct early_suspend *h);
 static void msmfb_late_resume_late(struct early_suspend *h);
 #endif
-
-/* LGE_CHANGE_S
- * Change codes to remove console cursor on booting screen. Refered to VS740
- * 2010-07-31. minjong.gong@lge.com
- */
+*/
 #ifdef CONFIG_LGE_FBCON_INACTIVE_CONSOLE
 static int is_console_inactive = 0;
 
@@ -664,10 +661,11 @@ static void msmfb_early_resume(struct early_suspend *h)
 	msm_fb_resume_sub(mfd);
 }
 
+/*
 #if CONFIG_LGE_GRAM_REFRESH_PATCH
 static void msmfb_early_suspend_early(struct early_suspend *h)
 {
-	/* do nothing */
+	// do nothing 
 }
 
 static void msmfb_late_resume_late(struct early_suspend *h)
@@ -676,6 +674,7 @@ static void msmfb_late_resume_late(struct early_suspend *h)
 	msm_fb_pan_display(last_var, last_info);
 }
 #endif
+*/
 #endif
 
 void msm_fb_set_backlight(struct msm_fb_data_type *mfd, __u32 bkl_lvl)
@@ -711,21 +710,10 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		if (!mfd->panel_power_on) {
-			msleep(16);
+			//msleep(16);
 			ret = pdata->on(mfd->pdev);
 			if (ret == 0) {
 				mfd->panel_power_on = TRUE;
-
-/* ToDo: possible conflict with android which doesn't expect sw refresher */
-/*
-	  if (!mfd->hw_refresh)
-	  {
-	    if ((ret = msm_fb_resume_sw_refresher(mfd)) != 0)
-	    {
-	      MSM_FB_INFO("msm_fb_blank_sub: msm_fb_resume_sw_refresher failed = %d!\n",ret);
-	    }
-	  }
-*/
 			}
 		}
 		break;
@@ -742,7 +730,7 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			curr_pwr_state = mfd->panel_power_on;
 			mfd->panel_power_on = FALSE;
 
-			msleep(16);
+			//msleep(16);
 			ret = pdata->off(mfd->pdev);
 			if (ret)
 				mfd->panel_power_on = curr_pwr_state;

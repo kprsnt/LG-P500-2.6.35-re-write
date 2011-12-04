@@ -207,11 +207,8 @@ unsigned long shrink_slab(unsigned long scanned, gfp_t gfp_mask,
 	if (scanned == 0)
 		scanned = SWAP_CLUSTER_MAX;
 
-	if (!down_read_trylock(&shrinker_rwsem)) {
-		/* Assume we'll be able to shrink next time */
-		ret = 1;
-		goto out;
-	}
+	if (!down_read_trylock(&shrinker_rwsem))
+		return 1;	/* Assume we'll be able to shrink next time */
 
 	list_for_each_entry(shrinker, &shrinker_list, list) {
 		unsigned long long delta;
@@ -262,8 +259,6 @@ unsigned long shrink_slab(unsigned long scanned, gfp_t gfp_mask,
 		shrinker->nr += total_scan;
 	}
 	up_read(&shrinker_rwsem);
-out:
-	cond_resched();
 	return ret;
 }
 
@@ -1092,6 +1087,31 @@ int isolate_lru_page(struct page *page)
 }
 
 /*
+ * Are there way too many processes in the direct reclaim path already?
+ */
+static int too_many_isolated(struct zone *zone, int file,
+		struct scan_control *sc)
+{
+	unsigned long inactive, isolated;
+
+	if (current_is_kswapd())
+		return 0;
+
+	if (!scanning_global_lru(sc))
+		return 0;
+
+	if (file) {
+		inactive = zone_page_state(zone, NR_INACTIVE_FILE);
+		isolated = zone_page_state(zone, NR_ISOLATED_FILE);
+	} else {
+		inactive = zone_page_state(zone, NR_INACTIVE_ANON);
+		isolated = zone_page_state(zone, NR_ISOLATED_ANON);
+	}
+
+	return isolated > inactive;
+}
+
+/*
  * shrink_inactive_list() is a helper for shrink_zone().  It returns the number
  * of reclaimed pages
  */
@@ -1104,6 +1124,15 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 	unsigned long nr_scanned = 0;
 	unsigned long nr_reclaimed = 0;
 	struct zone_reclaim_stat *reclaim_stat = get_reclaim_stat(zone, sc);
+
+	while (unlikely(too_many_isolated(zone, file, sc))) {
+		congestion_wait(BLK_RW_ASYNC, HZ/10);
+
+		/* We are about to die and free our memory. Return now. */
+		if (fatal_signal_pending(current))
+			return SWAP_CLUSTER_MAX;
+	}
+
 
 	pagevec_init(&pvec, 1);
 
@@ -2466,37 +2495,6 @@ static int __devinit cpu_callback(struct notifier_block *nfb,
 }
 
 /*
-<<<<<<< HEAD
- * We wake up kswapd every WT_EXPIRY till free ram is above pages_lots
- */
-static void watermark_wakeup(unsigned long data)
-{
-  pg_data_t *pgdat = (pg_data_t *)data;
-  struct timer_list *wt = &pgdat->watermark_timer;
-  int i;
-
-  if (!waitqueue_active(&pgdat->kswapd_wait))
-    goto out;
-  for (i = pgdat->nr_zones - 1; i >= 0; i--) {
-    struct zone *z = pgdat->node_zones + i;
-
-    if (!populated_zone(z) || is_highmem(z)) {
-      /* We are better off leaving highmem full */
-      continue;
-    }
-    if (!zone_watermark_ok(z, 0, lots_wmark_pages(z), 0, 0)) {
-      wake_up_interruptible(&pgdat->kswapd_wait);
-      goto out;
-    }
-  }
-out:
-  mod_timer(wt, jiffies + WT_EXPIRY);
-  return;
-}
-
-/*
-=======
->>>>>>> parent of 642374a... Ck2 patch
  * This kswapd start function will be called by init and node-hot-add.
  * On node-hot-add, kswapd will moved to proper cpus if cpus are hot-added.
  */
@@ -2991,4 +2989,3 @@ void scan_unevictable_unregister_node(struct node *node)
 {
 	sysdev_remove_file(&node->sysdev, &attr_scan_unevictable_pages);
 }
-
