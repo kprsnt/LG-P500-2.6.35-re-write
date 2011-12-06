@@ -25,18 +25,6 @@
 #include <asm/gpio.h>
 #include <mach/vreg.h>
 #include <mach/board_lge.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/cpufreq.h>
-#include <linux/cpu.h>
-#include <linux/jiffies.h>
-#include <linux/kernel_stat.h>
-#include <linux/mutex.h>
-#include <linux/hrtimer.h>
-#include <linux/tick.h>
-#include <linux/ktime.h>
-#include <linux/sched.h>
 
 #define PANEL_DEBUG 0
 
@@ -45,7 +33,18 @@
 #define INTMSK		LCD_CONTROL_BLOCK_BASE|(0x1c)
 #define VPOS		LCD_CONTROL_BLOCK_BASE|(0xc0)
 
+#if 0
+static uint32 mddi_hitachi_curr_vpos;
+static boolean mddi_hitachi_monitor_refresh_value = FALSE;
+static boolean mddi_hitachi_report_refresh_measurements = FALSE;
+#endif
 static boolean is_lcd_on = -1;
+
+/* The comment from AMSS codes:
+ * Dot clock (10MHz) / pixels per row (320) = rows_per_second
+ * Rows Per second, this number arrived upon empirically 
+ * after observing the timing of Vsync pulses
+ * XXX: TODO: change this values for INNOTEK PANEL */
 static uint32 mddi_hitachi_rows_per_second = 31250;
 static uint32 mddi_hitachi_rows_per_refresh = 480;
 extern boolean mddi_vsync_detect_enabled;
@@ -55,7 +54,9 @@ static void *mddi_hitachi_vsync_handler_arg;
 static uint16 mddi_hitachi_vsync_attempts;
 
 #if defined(CONFIG_MACH_MSM7X27_THUNDERG) || defined(CONFIG_MACH_MSM7X27_THUNDERC) || defined(CONFIG_MACH_MSM7X27_THUNDERA)
-
+/* Define new structure named 'msm_panel_hitachi_pdata' to use LCD initialization Flag (initialized)
+ * 2010-04-21, minjong.gong@lge.com
+ */
 static struct msm_panel_hitachi_pdata *mddi_hitachi_pdata;
 #else
 static struct msm_panel_common_pdata *mddi_hitachi_pdata;
@@ -66,6 +67,7 @@ static int mddi_hitachi_lcd_off(struct platform_device *pdev);
 
 static int mddi_hitachi_lcd_init(void);
 static void mddi_hitachi_lcd_panel_poweron(void);
+static void mddi_hitachi_lcd_panel_poweroff(void);
 static void mddi_hitachi_lcd_panel_store_poweron(void);
 
 #define DEBUG 1
@@ -120,6 +122,27 @@ static struct display_table mddi_hitachi_display_on_3rd[] = {
 	{0x29, 4, {0x00, 0x00, 0x00, 0x00}},
 	{REGFLAG_END_OF_TABLE, 0x00, {}}
 };
+
+#if 0
+static struct display_table2 mddi_hitachi_img[] = {
+	{0x2c, 16384, {}},
+};
+static struct display_table mddi_hitachi_img_end[] = {
+	{0x00, 0, {}},
+	{REGFLAG_END_OF_TABLE, 0x00, {}}
+};
+#endif
+
+#if 0
+static struct display_table mddi_hitachi_display_off[] = {
+	// Display off sequence
+	{0x28, 4, {0x00, 0x00, 0x00, 0x00}},
+	{REGFLAG_DELAY, 40, {}},
+	{0x10, 4, {0x00, 0x00, 0x00, 0x00}},
+	{REGFLAG_DELAY, 130, {}},
+	{REGFLAG_END_OF_TABLE, 0x00, {}}
+};
+#endif
 
 static struct display_table mddi_hitachi_sleep_mode_on_data[] = {
 	// Display off sequence
@@ -196,6 +219,64 @@ static struct display_table mddi_hitachi_initialize_1st[] = {
 	{0x2c,  4, {0x00, 0x00, 0x00, 0x00}},
 	{REGFLAG_END_OF_TABLE, 0x00, {}}
 };
+
+#ifdef CONFIG_MACH_MSM7X27_THUNDERC
+static struct display_table mddi_hitachi_initialize_3rd_vs660[] = {
+
+	// Power ON Sequence 
+	{0xf0, 4, {0x5a, 0x5a, 0x00, 0x00}},
+	{0xf1, 4, {0x5a, 0x5a, 0x00, 0x00}},
+
+	// PWRCTL 
+	// [VS660] DCN set value : 0x3F. For reducing LCD noise.
+	{0xf4, 16, {0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			    0x3f, 0x66, 0x02, 0x3f, 0x66, 0x02, 0x00, 0x00}},
+
+	// VCMCTL 
+	// Revert 6th parameter. From 0x04 to 0x00. 2010-09-02. minjong.gong@lge.com
+	{0xf5, 12, {0x00, 0x59, 0x45, 0x00, 0x00, 0x00, 0x00, 0x00,
+			    0x00, 0x00, 0x59, 0x45}},
+	{REGFLAG_DELAY, 10, {}},
+
+	// MANPWRSEQ 
+	// Revert 1st parameter. From 0x03 to 0x01. 2010-09-02. minjong.gong@lge.com
+	{0xf3, 8,  {0x01, 0x6e, 0x15, 0x07, 0x03, 0x00, 0x00, 0x00}},
+	
+	// DISCTL 
+	// Revert 2nd and 15th parameters. From 0x54 to 0x4d.
+	// Revert 6th, 7th, 9th and 10th parameters. From 0x08 to ox00.
+	// 2010-09-02. minjong.gong@lge.com
+	{0xf2, 20, {0x3b, 0x4d, 0x0f, 0x08, 0x08, 0x00, 0x00, 0x00,
+			    0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x4d, 0x08,
+			    0x08, 0x08, 0x08, 0x00}},
+
+	{0xf6, 12, {0x04, 0x00, 0x08, 0x03, 0x01, 0x00, 0x01, 0x00,
+			    0x00, 0x00, 0x00, 0x00}},
+
+	{0xf9, 4,  {0x27, 0x00, 0x00, 0x00}},
+
+	// PGAMMACTL 
+	{0xfa, 16, {0x03, 0x03, 0x08, 0x28, 0x2b, 0x2f, 0x32, 0x12,
+			    0x1d, 0x1f, 0x1c, 0x1c, 0x0f, 0x00, 0x00, 0x00}},
+
+	// MADCTL 
+	{0x36,  4, {0x48, 0x00, 0x00, 0x00}},
+
+	// TEON 
+	{0x35,  4, {0x00, 0x00, 0x00, 0x00}},
+
+	// COLMOD 
+	{0x3a,  4, {0x55, 0x00, 0x00, 0x00}},
+
+	// set column address 
+	{0x2a,  4, {0x00, 0x00, 0x01, 0x3f}},
+
+	// set page address 
+	{0x2b,  4, {0x00, 0x00, 0x01, 0xdf}},
+
+	{REGFLAG_END_OF_TABLE, 0x00, {}}
+};
+#endif
 
 #ifdef CONFIG_MACH_MSM7X27_THUNDERG
 static struct display_table mddi_hitachi_initialize_3rd_p500[] = {
@@ -280,6 +361,34 @@ void display_table(struct display_table *table, unsigned int count)
 	
 }
 
+#if 0
+static void compare_table(struct display_table *table, unsigned int count)
+{
+	unsigned int i;
+
+    for(i = 0; i < count; i++) {
+		
+        unsigned reg;
+        reg = table[i].reg;
+		
+        switch (reg) {
+			
+            case REGFLAG_DELAY :              
+                break;
+				
+            case REGFLAG_END_OF_TABLE :
+                break;
+				
+            default:
+                mddi_host_register_cmds_write8(reg, table[i].count, table[i].val_list, 0, 0, 0);
+//				if(table[i].val_list != temp)
+					
+				EPRINTK("%s: reg : %x, val : %x.\n", __func__, reg, table[i].val_list[0]);
+       	}
+    }	
+}
+#endif
+
 static void mddi_hitachi_vsync_set_handler(msm_fb_vsync_handler_type handler,	/* ISR to be executed */
 					 void *arg)
 {
@@ -315,6 +424,102 @@ static void mddi_hitachi_vsync_set_handler(msm_fb_vsync_handler_type handler,	/*
 	}
 }
 
+/* FIXME: following function has no meaning any more
+ * should be eliminated
+ * 2010-11-16, cleaneye.kim@lge.com
+ */
+static void mddi_hitachi_lcd_vsync_detected(boolean detected)
+{
+#if 0
+	/* static timetick_type start_time = 0; */
+	static struct timeval start_time;
+	static boolean first_time = TRUE;
+	/* unit32 mdp_cnt_val = 0; */
+	/* timetick_type elapsed_us; */
+	struct timeval now;
+	uint32 elapsed_us;
+	uint32 num_vsyncs;
+#endif
+
+/* LGE_CHANGE
+  * Close below code to fix screen shaking problem
+  * 2010-04-22, minjong.gong@lge.com
+  */
+//	mddi_queue_register_write_int(0x2C, 0);
+
+#if 0 /* Block temporaly till vsync implement */
+	if ((detected) || (mddi_hitachi_vsync_attempts > 5)) {
+		if ((detected) || (mddi_hitachi_monitor_refresh_value)) {
+			/* if (start_time != 0) */
+			if (!first_time) {
+				jiffies_to_timeval(jiffies, &now);
+				elapsed_us =
+					(now.tv_sec - start_time.tv_sec) * 1000000 +
+					now.tv_usec - start_time.tv_usec;
+				/*
+				 * LCD is configured for a refresh every usecs,
+				 *  so to determine the number of vsyncs that
+				 *  have occurred since the last measurement
+				 *  add half that to the time difference and
+				 *  divide by the refresh rate.
+				 */
+				num_vsyncs = (elapsed_us +
+						(mddi_hitachi_rows_per_refresh >>
+						 1))/
+					mddi_hitachi_rows_per_refresh;
+				/*
+				 * LCD is configured for * hsyncs (rows) per
+				 * refresh cycle. Calculate new rows_per_second
+				 * value based upon these new measuerments.
+				 * MDP can update with this new value.
+				 */
+				mddi_hitachi_rows_per_second =
+					(mddi_hitachi_rows_per_refresh * 1000 *
+					 num_vsyncs) / (elapsed_us / 1000);
+			}
+			/* start_time = timetick_get();*/
+			first_time = FALSE;
+			jiffies_to_timeval(jiffies, &start_time);
+			if (mddi_hitachi_report_refresh_measurements) {
+				(void)mddi_queue_register_read_int(VPOS,
+									&mddi_hitachi_curr_vpos);
+				/* mdp_cnt_val = MDP_LINE_COUNT; */
+			}
+		}
+		/* if detected = TRUE, client initiated wakeup was detected */
+		if (mddi_hitachi_vsync_handler != NULL) {
+			(*mddi_hitachi_vsync_handler)
+				(mddi_hitachi_vsync_handler_arg);
+			mddi_hitachi_vsync_handler = NULL;
+		}
+		mddi_vsync_detect_enabled = FALSE;
+		mddi_hitachi_vsync_attempts = 0;
+		/* need to disable the interrupt wakeup */
+		if (!mddi_queue_register_write_int(INTMSK, 0x0001))
+			printk("Vsync interrupt disable failed!\n");
+		if (!detected) {
+			/* give up after 5 failed attempts but show error */
+			printk("Vsync detection failed!\n");
+		} else if ((mddi_hitachi_monitor_refresh_value) &&
+				(mddi_hitachi_report_refresh_measurements)) {
+			printk("  Last Line Counter=%d!\n",
+					mddi_hitachi_curr_vpos);
+			/* MDDI_MSG_NOTICE("  MDP Line Counter=%d!\n",mdp_cnt_val); */
+			printk("  Lines Per Second=%d!\n",
+					mddi_hitachi_rows_per_second);
+		}
+		/* clear the interrupt */
+		if (!mddi_queue_register_write_int(INTFLG, 0x0001))
+			printk("Vsync interrupt clear failed!\n");
+	} else {
+		/* if detected = FALSE, we woke up from hibernation, but did not
+		 * detect client initiated wakeup.
+		 */
+		mddi_hitachi_vsync_attempts++;
+	}
+#endif
+}
+
 static void hitachi_workaround(void)
 {
 	if (lge_bd_rev <= LGE_REV_E) {
@@ -335,13 +540,16 @@ static int mddi_hitachi_lcd_on(struct platform_device *pdev)
 {
 	EPRINTK("%s: started.\n", __func__);
 
+#if defined(CONFIG_MACH_MSM7X27_THUNDERG) || defined(CONFIG_MACH_MSM7X27_THUNDERC) || defined(CONFIG_MACH_MSM7X27_THUNDERA)
 	if (system_state == SYSTEM_BOOTING && mddi_hitachi_pdata->initialized) {
 		hitachi_workaround();
 		is_lcd_on = TRUE;
 		return 0;
 	}
+#endif
 	// LCD HW Reset
 	mddi_hitachi_lcd_panel_poweron();
+#if defined(CONFIG_MACH_MSM7X27_THUNDERG)
 	if (lge_bd_rev <= LGE_REV_E) {
 		EPRINTK("ThunderG ==> lge_bd_rev = %d : 1st LCD initial\n", lge_bd_rev);
 		display_table(mddi_hitachi_initialize_1st, sizeof(mddi_hitachi_initialize_1st)/sizeof(struct display_table));
@@ -351,6 +559,22 @@ static int mddi_hitachi_lcd_on(struct platform_device *pdev)
 		display_table(mddi_hitachi_initialize_3rd_p500, sizeof(mddi_hitachi_initialize_3rd_p500)/sizeof(struct display_table));
 		display_table(mddi_hitachi_display_on_3rd, sizeof(mddi_hitachi_display_on_3rd) / sizeof(struct display_table));
 	}
+#elif defined(CONFIG_MACH_MSM7X27_THUNDERA)
+	display_table(mddi_hitachi_initialize_1st, 
+			sizeof(mddi_hitachi_initialize_1st)/sizeof(struct display_table));
+	display_table(mddi_hitachi_display_on_1st,
+			sizeof(mddi_hitachi_display_on_1st) / sizeof(struct display_table));
+#else
+	if (lge_bd_rev <= LGE_REV_D) {
+		EPRINTK("ThunderC ==> lge_bd_rev = %d : 1st LCD initial\n", lge_bd_rev);
+		display_table(mddi_hitachi_initialize_1st, sizeof(mddi_hitachi_initialize_1st)/sizeof(struct display_table));
+		display_table(mddi_hitachi_display_on_1st, sizeof(mddi_hitachi_display_on_1st) / sizeof(struct display_table));
+	} else {
+		EPRINTK("ThunderC ==> lge_bd_rev = %d : 3rd LCD initial\n", lge_bd_rev);
+		display_table(mddi_hitachi_initialize_3rd_vs660, sizeof(mddi_hitachi_initialize_3rd_vs660)/sizeof(struct display_table));
+		display_table(mddi_hitachi_display_on_3rd, sizeof(mddi_hitachi_display_on_3rd) / sizeof(struct display_table));
+	}
+#endif
 	is_lcd_on = TRUE;
 	return 0;
 }
@@ -375,6 +599,12 @@ static int mddi_hitachi_lcd_store_on(void)
 		display_table(mddi_hitachi_initialize_3rd_p500, sizeof(mddi_hitachi_initialize_3rd_p500)/sizeof(struct display_table));
 		display_table(mddi_hitachi_display_on_3rd, sizeof(mddi_hitachi_display_on_3rd) / sizeof(struct display_table));
 	}
+#elif defined(CONFIG_MACH_MSM7X27_THUNDERA)
+	display_table(mddi_hitachi_initialize_1st,
+			sizeof(mddi_hitachi_initialize_1st)/sizeof(struct display_table));
+	mdelay(200);
+	display_table(mddi_hitachi_display_on_1st,
+			sizeof(mddi_hitachi_display_on_1st) / sizeof(struct display_table));
 #else
 	if (lge_bd_rev <= LGE_REV_D) {
 		display_table(mddi_hitachi_initialize_1st, sizeof(mddi_hitachi_initialize_1st)/sizeof(struct display_table));
@@ -391,6 +621,7 @@ static int mddi_hitachi_lcd_store_on(void)
 static int mddi_hitachi_lcd_off(struct platform_device *pdev)
 {
 	display_table(mddi_hitachi_sleep_mode_on_data, sizeof(mddi_hitachi_sleep_mode_on_data)/sizeof(struct display_table));
+	mddi_hitachi_lcd_panel_poweroff();
 	is_lcd_on = FALSE;
 	return 0;
 }
@@ -404,16 +635,18 @@ ssize_t mddi_hitachi_lcd_show_onoff(struct device *dev, struct device_attribute 
 ssize_t mddi_hitachi_lcd_store_onoff(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct platform_device dummy_pdev;
-	int onoff;
+	int onoff; // = simple_strtol(buf, NULL, count);
 	sscanf(buf, "%d", &onoff);
 
 	EPRINTK("%s: onoff : %d\n", __func__, onoff);
 	
 	if(onoff) {
+//		display_table(mddi_hitachi_display_on, sizeof(mddi_hitachi_display_on) / sizeof(struct display_table));
 		mddi_hitachi_lcd_store_on();
 		is_lcd_on = TRUE;
 	}
 	else {
+//		display_table(mddi_hitachi_display_off, sizeof(mddi_hitachi_display_off) / sizeof(struct display_table));
 		mddi_hitachi_lcd_off(&dummy_pdev);
 		is_lcd_on = FALSE;
 	}
@@ -493,10 +726,8 @@ static int mddi_hitachi_lcd_init(void)
 		pinfo->wait_cycle = 0;
 		pinfo->bpp = 16;
 	
+		// vsync config
 		pinfo->lcd.vsync_enable = TRUE;
-		pinfo->lcd.hw_vsync_mode = TRUE;
-		
-
 		pinfo->lcd.refx100 = (mddi_hitachi_rows_per_second * 100) /
                         		mddi_hitachi_rows_per_refresh;
 
@@ -509,6 +740,7 @@ static int mddi_hitachi_lcd_init(void)
 		pinfo->lcd.v_front_porch = 6;
 		pinfo->lcd.v_pulse_width = 4;
 
+		pinfo->lcd.hw_vsync_mode = TRUE;
 		pinfo->lcd.vsync_notifier_period = (1 * HZ);
 
 		pinfo->bl_max = 4;
@@ -524,6 +756,10 @@ static int mddi_hitachi_lcd_init(void)
 			EPRINTK("%s: this_device_0 register success\n", __func__);
 			platform_driver_unregister(&this_driver);
 		}
+	}
+
+	if(!ret) {
+		mddi_lcd.vsync_detected = mddi_hitachi_lcd_vsync_detected;
 	}
 
 	return ret;
@@ -546,7 +782,7 @@ static void mddi_hitachi_lcd_panel_poweron(void)
 	fb_height = 480;
 
 	if(pdata && pdata->gpio) {
-		//gpio_set_value(pdata->gpio, 0);
+		gpio_set_value(pdata->gpio, 0);
 		gpio_set_value(pdata->gpio, 1);
 	}
 }
@@ -565,7 +801,7 @@ static void mddi_hitachi_lcd_panel_store_poweron(void)
 	fb_height = 480;
 
 	if(pdata && pdata->gpio) {
-		//gpio_set_value(pdata->gpio, 0);
+		gpio_set_value(pdata->gpio, 0);
 		gpio_set_value(pdata->gpio, 1);
 	}
 }
@@ -575,7 +811,6 @@ static void mddi_hitachi_lcd_panel_store_poweron(void)
   * In sleep mode disable LCD by assertion low on reset pin.
   * 2010-06-07, minjong.gong@lge.com
   */
-/*
 static void mddi_hitachi_lcd_panel_poweroff(void)
 {
 	struct msm_panel_hitachi_pdata *pdata = mddi_hitachi_pdata;
@@ -589,5 +824,4 @@ static void mddi_hitachi_lcd_panel_poweroff(void)
 		gpio_set_value(pdata->gpio, 0);
 	}
 }
-*/
 module_init(mddi_hitachi_lcd_init);

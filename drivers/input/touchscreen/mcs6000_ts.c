@@ -54,6 +54,8 @@ static void mcs6000_early_suspend(struct early_suspend *h);
 static void mcs6000_late_resume(struct early_suspend *h);
 #endif
 
+#define TS_SAMPLERATE_HZ 100
+
 #define LG_FW_MULTI_TOUCH
 #define LG_FW_TOUCH_SOFT_KEY		1
 #define TOUCH_SEARCH			247
@@ -72,8 +74,8 @@ static void mcs6000_late_resume(struct early_suspend *h);
  */
 enum {
 	MCS6000_DM_TRACE_NO   = 1U << 0,
-	MCS6000_DM_TRACE_YES  = 1U << 1,
-	MCS6000_DM_TRACE_FUNC = 1U << 2,
+	MCS6000_DM_TRACE_YES  = 1U << 0,
+	MCS6000_DM_TRACE_FUNC = 1U << 0,
 };
 
 static unsigned int mcs6000_debug_mask = MCS6000_DM_TRACE_NO;
@@ -138,14 +140,6 @@ enum {
 };
 
 enum {
-	NO_KEY_TOUCHED,
-	KEY1_TOUCHED,
-	KEY2_TOUCHED,
-	KEY3_TOUCHED,
-	MAX_KEY_TOUCH
-};
-
-enum {
 	MCS6000_DEV_NORMAL,
 	MCS6000_DEV_SUSPEND,
 	MCS6000_DEV_DOWNLOAD
@@ -206,10 +200,9 @@ static __inline void mcs6000_multi_ts_event_touch(int x1, int y1, int x2, int y2
 		report = 1;
 	}
 
-	if (report != 0) {
+	if (report != 0)
 		input_sync(ts->input_dev);
-		//msleep(2);
-	} else {
+	else {
 		if (MCS6000_DM_TRACE_YES & mcs6000_debug_mask)
 			DMSG("Not available touch data x1=%d, y1=%d, x2=%d, y2=%d\n", x1, y1, x2, y2);
 	}
@@ -264,11 +257,6 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 	int x2 = 0, y2 = 0;
 	static int pre_x1, pre_x2, pre_y1, pre_y2;
 	static unsigned int s_input_type = NON_TOUCHED_STATE;
-	static int flipy=0;
-	static int flipx=0;
-	static int canFlipX=1;
-	static int canFlipY=1;
-
 #endif
 	unsigned int input_type;
 	unsigned char read_buf[READ_NUM];
@@ -285,7 +273,7 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 	/* read the registers of MCS6000 IC */
 	if (i2c_smbus_read_i2c_block_data(ts->client, MCS6000_TS_INPUT_INFO, READ_NUM, read_buf) < 0) {
 		printk(KERN_ERR "%s touch ic read error\n", __FUNCTION__);
-		goto touch_retry;
+		queue_delayed_work(mcs6000_wq, &ts->work, (HZ / TS_SAMPLERATE_HZ) );
 	}
 
 	input_type = read_buf[0] & 0x0f;
@@ -294,8 +282,7 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 	y1 = (read_buf[1] & 0x0f) << 8;
 
 	x1 |= read_buf[2];	
-	y1 |= read_buf[3];
-		
+	y1 |= read_buf[3];		
 
 #ifdef LG_FW_MULTI_TOUCH
 	if (input_type == MULTI_POINT_TOUCH) {
@@ -304,34 +291,6 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 		y2 = (read_buf[5] & 0x0f) << 8;
 		x2 |= read_buf[6];
 		y2 |= read_buf[7];
-		
-		if ( (canFlipX) && (abs(y1-y2) <= 40) )
-			{
-				// set flip flag
-				flipx=!flipx;
-				// stop calculation until points drive away from each other
-				canFlipX=0;
-			}
-		if ( (canFlipY) && (abs(x1-x2) <= 40) )
-			{
-				// set flip flag
-				flipy=!flipy;
-				// stop calculation until points drive away from each other
-				canFlipY=0;
-			}
-			
-		// actual flip of points
-		// this is done during the whole inversion, on each sampling coords must be flipped
-		if(flipx)
-			swap(x1,x2);
-		if(flipy)
-			swap(y1,y2);
-
-		// when points drive away from each other, reactivate the checks
-		if(abs(y1-y2) > 40)
-			canFlipX = 1;
-		if(abs(x1-x2) > 40)
-			canFlipY = 1; 
 	}
 #endif
 	if (input_type) {
@@ -352,11 +311,9 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 		if (input_type == SINGLE_POINT_TOUCH) {
 			mcs6000_single_ts_event_touch(x1, y1, PRESSED, ts);
 		}
+		queue_delayed_work(mcs6000_wq, &ts->work, (HZ / TS_SAMPLERATE_HZ) );
 #endif				
 	} else { /* touch released case */
-		canFlipY = canFlipX = 1;
-		flipx = flipy = 0;
-
 		if (touch_pressed) {
 #ifdef LG_FW_MULTI_TOUCH
 			if (s_input_type == MULTI_POINT_TOUCH) {
@@ -384,7 +341,7 @@ static void mcs6000_ts_work_func(struct work_struct *work)
 
 touch_retry:
 	if (ts->pendown) {
-		queue_delayed_work(mcs6000_wq, &ts->work, msecs_to_jiffies(ts->poll_interval));
+		queue_delayed_work(mcs6000_wq, &ts->work, (HZ / TS_SAMPLERATE_HZ) );
 	}
 	else {
 		enable_irq(ts->num_irq);
@@ -399,7 +356,7 @@ static irqreturn_t mcs6000_ts_irq_handler(int irq, void *dev_id)
 	if (gpio_get_value(ts->intr_gpio) == 0) {
 		disable_irq_nosync(ts->client->irq);
 		ts->irq_sync--;
-		queue_delayed_work(mcs6000_wq, &ts->work, msecs_to_jiffies(ts->poll_interval));
+		queue_delayed_work(mcs6000_wq, &ts->work, (HZ / TS_SAMPLERATE_HZ) );
 	}
 	else  {
 		printk(KERN_INFO "mcs6000_ts_irq_handler: check int gpio level\n");
@@ -1331,3 +1288,4 @@ module_exit(mcs6000_ts_exit);
 MODULE_AUTHOR("Kenobi Lee");
 MODULE_DESCRIPTION("MELFAS MCS6000 Touchscreen Driver");
 MODULE_LICENSE("GPL");
+

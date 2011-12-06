@@ -125,13 +125,13 @@ static struct attribute *g[] = {
 static struct attribute_group attr_group = {
 	.attrs = g,
 };
-/*
+
 #ifdef CONFIG_LGE_SUSPEND_HIGH_PRIO_PATCH
 static void ctrl_prio_early_suspend(struct early_suspend *h)
 {
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
 
-	// wait end of processing the lcd update request
+	/* wait end of processing the lcd update request */
 	msleep(500);
 
 	sched_setscheduler_nocheck(current, SCHED_FIFO, &param);
@@ -143,7 +143,7 @@ static void ctrl_prio_late_resume(struct early_suspend *h)
 	
 	sched_setscheduler_nocheck(current, SCHED_NORMAL, &param);
 	
-	// wait stable state of lcd panel
+	/* wait stable state of lcd panel */
 //	msleep(50);
 	yield();
 }
@@ -154,7 +154,7 @@ static struct early_suspend suspend_thread_priority_control_desc = {
 	.resume = ctrl_prio_late_resume,
 };
 #endif
-*/
+
 static int __init android_power_init(void)
 {
 	int ret;
@@ -169,11 +169,10 @@ static int __init android_power_init(void)
 	}
 
 	register_early_suspend(&stop_drawing_early_suspend_desc);
-/*
 #ifdef CONFIG_LGE_SUSPEND_HIGH_PRIO_PATCH
 	register_early_suspend(&suspend_thread_priority_control_desc);
 #endif
-*/
+
 	return 0;
 }
 
